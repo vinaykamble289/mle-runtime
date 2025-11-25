@@ -1,0 +1,52 @@
+# Build directories (excluded from git but kept locally)
+build/
+dist/
+target/
+*.egg-info/
+__pycache__/
+cpp_core/build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node.js
+node_modules/
+package-lock.json
+
+# Python
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+
+# Java
+*.class
+*.jar
+*.war
+
+# C++
+*.o
+*.so
+*.dll
+*.dylib
+*.exe
+
+# Logs
+*.log
+
+# SDK specific
+sdk/nodejs/build/
+sdk/nodejs/dist/
+sdk/python/build/
+sdk/python/dist/
+sdk/java/target/
+sdk/cpp/build/
