@@ -152,7 +152,7 @@ pip install -e .
 
 # Or build wheel
 python setup.py bdist_wheel
-pip install dist/mle_runtime-1.0.0-*.whl
+pip install dist/mle_runtime-1.0.1-*.whl
 
 # Run tests
 pytest tests/

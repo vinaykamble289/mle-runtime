@@ -143,7 +143,11 @@ GraphExecutor::GraphExecutor(Device device) : device_(device) {}
 GraphExecutor::~GraphExecutor() {
     if (memory_pool_) {
         if (device_ == Device::CPU) {
+#ifdef _MSC_VER
+            _aligned_free(memory_pool_);
+#else
             free(memory_pool_);
+#endif
         } else {
 #ifdef ENABLE_CUDA
             cudaFree(memory_pool_);
@@ -166,7 +170,11 @@ void GraphExecutor::load_model(const std::string& path) {
     pool_size_ = plan_.total_memory_required;
     
     if (device_ == Device::CPU) {
+#ifdef _MSC_VER
+        memory_pool_ = _aligned_malloc(pool_size_, 64);
+#else
         memory_pool_ = aligned_alloc(64, pool_size_);
+#endif
     } else {
 #ifdef ENABLE_CUDA
         cudaMalloc(&memory_pool_, pool_size_);

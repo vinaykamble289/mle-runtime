@@ -13,9 +13,9 @@ library_dirs = []
 include_dirs = ['../../cpp_core/include']
 
 if sys.platform == 'win32':
-    extra_compile_args = ['/O2', '/std:c++20']
+    extra_compile_args = ['/O2', '/std:c++17']
 else:
-    extra_compile_args = ['-O3', '-std=c++20', '-march=native']
+    extra_compile_args = ['-O3', '-std=c++17']
 
 if enable_cuda:
     extra_compile_args.append('-DENABLE_CUDA')

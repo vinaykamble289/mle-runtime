@@ -108,6 +108,49 @@ void gelu_cpu(const TensorView& input, TensorView& output) {
     }
 }
 
+// Softmax: y_i = exp(x_i) / sum(exp(x_j))
+void softmax_cpu(const TensorView& input, TensorView& output) {
+    if (input.dtype() != DType::FP32) {
+        throw std::runtime_error("Only FP32 supported");
+    }
+    
+    const auto& shape = input.shape();
+    const float* in = static_cast<const float*>(input.data());
+    float* out = static_cast<float*>(output.data());
+    
+    // Assume last dimension is the softmax dimension
+    // For 2D: [batch, features], softmax over features
+    if (shape.size() == 2) {
+        uint32_t batch = shape[0];
+        uint32_t features = shape[1];
+        
+        for (uint32_t i = 0; i < batch; ++i) {
+            const float* row_in = in + i * features;
+            float* row_out = out + i * features;
+            
+            // Find max for numerical stability
+            float max_val = row_in[0];
+            for (uint32_t j = 1; j < features; ++j) {
+                max_val = std::max(max_val, row_in[j]);
+            }
+            
+            // Compute exp and sum
+            float sum = 0.0f;
+            for (uint32_t j = 0; j < features; ++j) {
+                row_out[j] = std::exp(row_in[j] - max_val);
+                sum += row_out[j];
+            }
+            
+            // Normalize
+            for (uint32_t j = 0; j < features; ++j) {
+                row_out[j] /= sum;
+            }
+        }
+    } else {
+        throw std::runtime_error("Softmax only supports 2D tensors");
+    }
+}
+
 // Linear layer: y = xW^T + b
 void linear_cpu(const TensorView& input, const TensorView& weight, 
                 const TensorView& bias, TensorView& output) {
@@ -126,7 +169,11 @@ void linear_cpu(const TensorView& input, const TensorView& weight,
     uint32_t out_features = w_shape[0];
     
     if (w_shape[1] != in_features) {
-        throw std::runtime_error("Shape mismatch in linear");
+        char error_msg[256];
+        snprintf(error_msg, sizeof(error_msg),
+                "Shape mismatch in linear: input=[%u,%u], weight=[%u,%u], expected weight=[%u,%u]",
+                batch, in_features, w_shape[0], w_shape[1], out_features, in_features);
+        throw std::runtime_error(error_msg);
     }
     
     const float* x = static_cast<const float*>(input.data());

@@ -14,34 +14,8 @@ version = "1.0.1"
 with open("README.md", "r", encoding="utf-8") as f:
     long_description = f.read()
 
-# C++ extension module
+# C++ extension module - Skip for now, use bindings/python instead
 ext_modules = []
-if not os.environ.get("MLE_SKIP_BUILD"):
-    import platform
-    
-    # Platform-specific compiler flags
-    if platform.system() == "Windows":
-        extra_compile_args = ["/std:c++17", "/O2"]
-    else:
-        extra_compile_args = ["-std=c++17", "-O3"]
-    
-    ext_modules = [
-        Extension(
-            "mle_runtime._mle_core",
-            sources=[
-                "src/python_bindings.cpp",
-                "../../cpp_core/src/engine.cpp",
-                "../../cpp_core/src/loader.cpp",
-                "../../cpp_core/src/executor.cpp",
-                "../../cpp_core/src/ops_cpu.cpp",
-            ],
-            include_dirs=[
-                "../../cpp_core/include",
-            ],
-            extra_compile_args=extra_compile_args,
-            language="c++",
-        )
-    ]
 
 setup(
     name="mle-runtime",
@@ -53,6 +27,9 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/vinaykamble289/mle-runtime",
     packages=find_packages(),
+    package_data={
+        'mle_runtime': ['*.py'],
+    },
     ext_modules=ext_modules,
     classifiers=[
         "Development Status :: 4 - Beta",
@@ -72,11 +49,35 @@ setup(
         "numpy>=1.20.0",
     ],
     extras_require={
+        "sklearn": ["scikit-learn>=1.0.0", "joblib>=1.0.0"],
+        "pytorch": ["torch>=1.10.0"],
+        "tensorflow": ["tensorflow>=2.8.0"],
+        "xgboost": ["xgboost>=1.5.0"],
+        "lightgbm": ["lightgbm>=3.3.0"],
+        "catboost": ["catboost>=1.0.0"],
+        "all": [
+            "scikit-learn>=1.0.0",
+            "joblib>=1.0.0",
+            "torch>=1.10.0",
+            "tensorflow>=2.8.0",
+            "xgboost>=1.5.0",
+            "lightgbm>=3.3.0",
+            "catboost>=1.0.0",
+        ],
         "dev": [
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",
             "black>=23.0.0",
             "mypy>=1.0.0",
+        ],
+    },
+    entry_points={
+        'console_scripts': [
+            'mle-export=mle_runtime.universal_exporter:main',
+            'mle-export-sklearn=mle_runtime.sklearn_to_mle:main',
+            'mle-export-pytorch=mle_runtime.pytorch_to_mle:main',
+            'mle-export-tensorflow=mle_runtime.tensorflow_to_mle:main',
+            'mle-export-xgboost=mle_runtime.xgboost_to_mle:main',
         ],
     },
     keywords="machine-learning inference ml ai runtime mle joblib",

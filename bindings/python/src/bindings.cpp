@@ -3,8 +3,14 @@
 #include <pybind11/stl.h>
 #include "engine.h"
 #include "executor.h"
+#include <cstddef>
 
 namespace py = pybind11;
+
+// MSVC doesn't have ssize_t in global namespace
+#ifdef _MSC_VER
+using ssize_t = py::ssize_t;
+#endif
 
 namespace mle {
 
@@ -30,18 +36,11 @@ std::shared_ptr<TensorView> numpy_to_tensor(py::array arr) {
     return std::make_shared<TensorView>(buf.ptr, shape, dtype);
 }
 
-// Convert TensorView to numpy array (zero-copy)
+// Convert TensorView to numpy array (with copy for now - TODO: zero-copy with capsule)
 py::array tensor_to_numpy(std::shared_ptr<TensorView> tensor) {
     std::vector<ssize_t> shape;
     for (auto dim : tensor->shape()) {
         shape.push_back(dim);
-    }
-    
-    std::vector<ssize_t> strides;
-    ssize_t stride = TensorView::element_size(tensor->dtype());
-    for (int i = shape.size() - 1; i >= 0; --i) {
-        strides.insert(strides.begin(), stride);
-        if (i > 0) stride *= shape[i];
     }
     
     py::dtype dt;
@@ -53,7 +52,11 @@ py::array tensor_to_numpy(std::shared_ptr<TensorView> tensor) {
         throw std::runtime_error("Unsupported dtype");
     }
     
-    return py::array(dt, shape, strides, tensor->data(), py::cast(tensor));
+    // Create numpy array and copy data
+    py::array result(dt, shape);
+    std::memcpy(result.mutable_data(), tensor->data(), tensor->size());
+    
+    return result;
 }
 
 } // namespace mle

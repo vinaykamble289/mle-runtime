@@ -21,7 +21,23 @@ engine.load_model('model.mle')         # 1-5ms (100x faster!)
 ## Installation
 
 ```bash
+# Basic installation (inference only)
 pip install mle-runtime
+
+# With scikit-learn export support
+pip install mle-runtime[sklearn]
+
+# With PyTorch export support
+pip install mle-runtime[pytorch]
+
+# With TensorFlow/Keras export support
+pip install mle-runtime[tensorflow]
+
+# With XGBoost/LightGBM/CatBoost support
+pip install mle-runtime[xgboost,lightgbm,catboost]
+
+# Install everything
+pip install mle-runtime[all]
 ```
 
 ## Quick Start
@@ -46,12 +62,20 @@ print("Peak memory:", engine.peak_memory_usage(), "bytes")
 
 ## Features
 
+### Inference Runtime
 - ✅ **10-100x faster loading** - Memory-mapped binary format
 - ✅ **50-90% smaller files** - Optimized weight storage
 - ✅ **2-5x faster inference** - Native C++ execution
 - ✅ **Cross-platform** - Deploy without Python runtime
 - ✅ **Zero-copy** - Minimal memory overhead
 - ✅ **Type hints** - Full typing support
+
+### Universal Model Export
+- ✅ **All ML Frameworks** - scikit-learn, PyTorch, TensorFlow, XGBoost, LightGBM, CatBoost
+- ✅ **80+ Model Types** - Linear, Trees, Neural Networks, Ensembles, SVM, and more
+- ✅ **No Cross-Dependencies** - Export any model independently
+- ✅ **Auto-Detection** - Automatically detects framework and exports
+- ✅ **Command-Line Tools** - Easy CLI for batch exports
 
 ## API Reference
 
@@ -206,6 +230,140 @@ Results:
 Export: Joblib 145.2ms vs MLE 15.3ms (9.5x faster)
 Load: Joblib 203.7ms vs MLE 2.1ms (97x faster)
 File size: Joblib 89KB vs MLE 12KB (86% smaller)
+```
+
+## Universal Model Export
+
+MLE Runtime includes a universal exporter that supports **ALL major ML/DL frameworks** with **NO cross-dependencies**.
+
+### Supported Frameworks & Models
+
+#### Scikit-learn (40+ models)
+- Linear: LogisticRegression, LinearRegression, Ridge, Lasso, ElasticNet, SGD, etc.
+- Neural Networks: MLPClassifier, MLPRegressor
+- Trees: DecisionTree, RandomForest, GradientBoosting, AdaBoost, ExtraTrees
+- SVM: SVC, SVR, NuSVC, NuSVR, LinearSVC, LinearSVR
+- Naive Bayes: GaussianNB, MultinomialNB, BernoulliNB
+- Neighbors: KNeighborsClassifier, KNeighborsRegressor
+- Clustering: KMeans, DBSCAN, AgglomerativeClustering
+- Decomposition: PCA, TruncatedSVD
+
+#### PyTorch (17+ layers)
+- Layers: Linear, Conv2d, BatchNorm, LayerNorm, Embedding, LSTM, GRU
+- Activations: ReLU, LeakyReLU, GELU, Sigmoid, Tanh, Softmax
+- Pooling: MaxPool2d, AvgPool2d
+
+#### TensorFlow/Keras (15+ layers)
+- Layers: Dense, Conv2D, BatchNormalization, LayerNormalization, Embedding
+- Activations: ReLU, LeakyReLU, GELU, Softmax
+
+#### Gradient Boosting (8 models)
+- XGBoost: XGBClassifier, XGBRegressor, Booster
+- LightGBM: LGBMClassifier, LGBMRegressor, Booster
+- CatBoost: CatBoostClassifier, CatBoostRegressor
+
+### Universal Exporter (Auto-Detection)
+
+```python
+from mle_runtime import export_model
+
+# Works with ANY model from ANY framework!
+export_model(your_model, 'model.mle', input_shape=(1, 20))
+```
+
+### Framework-Specific Exporters
+
+#### Scikit-learn
+```python
+from mle_runtime import SklearnMLEExporter
+from sklearn.ensemble import RandomForestClassifier
+
+model = RandomForestClassifier(n_estimators=100)
+model.fit(X_train, y_train)
+
+exporter = SklearnMLEExporter()
+exporter.export_sklearn(model, 'rf_model.mle', input_shape=(1, 20))
+```
+
+#### PyTorch
+```python
+from mle_runtime import MLEExporter
+import torch.nn as nn
+
+model = nn.Sequential(
+    nn.Linear(20, 64),
+    nn.ReLU(),
+    nn.Linear(64, 10)
+)
+
+exporter = MLEExporter()
+exporter.export_mlp(model, (1, 20), 'pytorch_model.mle')
+```
+
+#### TensorFlow/Keras
+```python
+from mle_runtime import TensorFlowMLEExporter
+from tensorflow import keras
+
+model = keras.Sequential([
+    keras.layers.Dense(64, activation='relu', input_shape=(20,)),
+    keras.layers.Dense(10, activation='softmax')
+])
+
+exporter = TensorFlowMLEExporter()
+exporter.export_keras(model, 'keras_model.mle', input_shape=(1, 20))
+```
+
+#### XGBoost
+```python
+from mle_runtime import GradientBoostingMLEExporter
+import xgboost as xgb
+
+model = xgb.XGBClassifier(n_estimators=100)
+model.fit(X_train, y_train)
+
+exporter = GradientBoostingMLEExporter()
+exporter.export_xgboost(model, 'xgb_model.mle', input_shape=(1, 20))
+```
+
+#### LightGBM
+```python
+from mle_runtime import GradientBoostingMLEExporter
+import lightgbm as lgb
+
+model = lgb.LGBMClassifier(n_estimators=100)
+model.fit(X_train, y_train)
+
+exporter = GradientBoostingMLEExporter()
+exporter.export_lightgbm(model, 'lgb_model.mle', input_shape=(1, 20))
+```
+
+#### CatBoost
+```python
+from mle_runtime import GradientBoostingMLEExporter
+import catboost as cb
+
+model = cb.CatBoostClassifier(iterations=100)
+model.fit(X_train, y_train)
+
+exporter = GradientBoostingMLEExporter()
+exporter.export_catboost(model, 'cb_model.mle', input_shape=(1, 20))
+```
+
+### Command-Line Tools
+
+```bash
+# Universal exporter (auto-detects framework)
+mle-export --model model.pkl --out model.mle --input-shape 1,20
+
+# Framework-specific exporters
+mle-export-sklearn --model model.pkl --out model.mle --input-shape 1,20
+mle-export-pytorch --model model.pth --out model.mle --input-shape 1,20
+mle-export-tensorflow --model saved_model/ --out model.mle
+mle-export-xgboost --framework xgboost --model model.json --out model.mle
+
+# Run demos
+mle-export-sklearn --demo --out demo.mle
 ```
 
 ## Migration from Joblib

@@ -33,6 +33,7 @@ public:
 private:
     void execute_node(const GraphNode& node);
     std::shared_ptr<TensorView> allocate_tensor(const TensorDesc& desc);
+    std::shared_ptr<TensorView> get_or_load_tensor(uint32_t tensor_id);
     
     Device device_;
     std::unique_ptr<ModelLoader> loader_;

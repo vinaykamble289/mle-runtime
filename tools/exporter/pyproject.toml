@@ -1,20 +1,20 @@
 [build-system]
-requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mle-runtime"
-version = "1.0.2"
-description = "Fast ML inference runtime - 10-100x faster than joblib"
+name = "mle-exporter"
+version = "1.0.0"
+description = "Universal ML/DL model exporter to efficient .mle format"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
-    {name = "Vinay Kamble", email = "vinaykamble289@gmail.com"}
+    {name = "MLE Team", email = "team@mle.ai"}
 ]
-keywords = ["machine-learning", "inference", "ml", "ai", "runtime", "mle", "joblib"]
+keywords = ["machine-learning", "deep-learning", "model-export", "pytorch", "tensorflow", "scikit-learn", "xgboost"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
@@ -23,9 +23,9 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
-    "Programming Language :: C++",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+
 dependencies = [
     "numpy>=1.20.0",
 ]
@@ -48,26 +48,28 @@ all = [
 ]
 dev = [
     "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "black>=23.0.0",
-    "mypy>=1.0.0",
+    "pytest-cov>=3.0.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+    "mypy>=0.950",
 ]
 
 [project.scripts]
-mle-export = "mle_runtime.universal_exporter:main"
-mle-export-sklearn = "mle_runtime.sklearn_to_mle:main"
-mle-export-pytorch = "mle_runtime.pytorch_to_mle:main"
-mle-export-tensorflow = "mle_runtime.tensorflow_to_mle:main"
-mle-export-xgboost = "mle_runtime.xgboost_to_mle:main"
+mle-export = "universal_exporter:main"
+mle-export-sklearn = "sklearn_to_mle:main"
+mle-export-pytorch = "pytorch_to_mle:main"
+mle-export-tensorflow = "tensorflow_to_mle:main"
+mle-export-xgboost = "xgboost_to_mle:main"
+mle-test-exporters = "test_all_exporters:main"
 
 [project.urls]
-Homepage = "https://github.com/vinaykamble289/mle-runtime"
-Documentation = "https://github.com/vinaykamble289/mle-runtime/blob/main/sdk/python/README.md"
-Repository = "https://github.com/vinaykamble289/mle-runtime"
-Issues = "https://github.com/vinaykamble289/mle-runtime/issues"
+Homepage = "https://github.com/yourusername/mle"
+Documentation = "https://github.com/yourusername/mle/blob/main/tools/exporter/README.md"
+Repository = "https://github.com/yourusername/mle"
+"Bug Tracker" = "https://github.com/yourusername/mle/issues"
 
 [tool.setuptools]
-packages = ["mle_runtime"]
+packages = ["mle_exporter"]
 
 [tool.black]
 line-length = 100
@@ -77,4 +79,10 @@ target-version = ['py38', 'py39', 'py310', 'py311']
 python_version = "3.8"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

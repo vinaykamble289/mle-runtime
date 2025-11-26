@@ -111,6 +111,12 @@ TensorView ModelLoader::get_tensor(uint32_t tensor_id) const {
     }
     
     const TensorDesc& desc = tensors_[tensor_id];
+    
+    // Check if this is a placeholder tensor (no data)
+    if (desc.size == 0) {
+        throw std::runtime_error("Cannot load placeholder tensor - it has no data");
+    }
+    
     void* data = const_cast<void*>(
         static_cast<const void*>(
             static_cast<const uint8_t*>(weights_ptr_) + desc.offset));
