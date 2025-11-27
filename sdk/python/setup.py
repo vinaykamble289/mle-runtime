@@ -4,18 +4,57 @@ Setup script
 """
 
 from setuptools import setup, Extension, find_packages
+from pybind11.setup_helpers import Pybind11Extension, build_ext
 import sys
 import os
 
 # Read version
-version = "1.0.1"
+version = "1.0.4"
 
 # Read README
 with open("README.md", "r", encoding="utf-8") as f:
     long_description = f.read()
 
-# C++ extension module - Skip for now, use bindings/python instead
-ext_modules = []
+# Build C++ extension module
+enable_cuda = os.environ.get('ENABLE_CUDA', '0') == '1'
+
+extra_compile_args = []
+extra_link_args = []
+libraries = []
+library_dirs = []
+
+# Use relative paths for source files (required by setuptools)
+include_dirs = ['src/cpp_core/include']
+
+if sys.platform == 'win32':
+    extra_compile_args = ['/O2', '/std:c++17']
+else:
+    extra_compile_args = ['-O3', '-std=c++17']
+
+if enable_cuda:
+    extra_compile_args.append('-DENABLE_CUDA')
+    libraries.extend(['cudart', 'cublas'])
+    cuda_home = os.environ.get('CUDA_HOME', '/usr/local/cuda')
+    include_dirs.append(os.path.join(cuda_home, 'include'))
+    library_dirs.append(os.path.join(cuda_home, 'lib64'))
+
+ext_modules = [
+    Pybind11Extension(
+        'mle_runtime._mle_core',
+        sources=[
+            'src/bindings_sdk.cpp',
+            'src/cpp_core/src/loader.cpp',
+            'src/cpp_core/src/engine.cpp',
+            'src/cpp_core/src/ops_cpu.cpp',
+            'src/cpp_core/src/executor.cpp',
+        ],
+        include_dirs=include_dirs,
+        library_dirs=library_dirs,
+        libraries=libraries,
+        extra_compile_args=extra_compile_args,
+        extra_link_args=extra_link_args,
+    ),
+]
 
 setup(
     name="mle-runtime",
@@ -28,9 +67,10 @@ setup(
     url="https://github.com/vinaykamble289/mle-runtime",
     packages=find_packages(),
     package_data={
-        'mle_runtime': ['*.py'],
+        'mle_runtime': ['*.py', '*.pyd', '*.so', '*.dylib'],
     },
     ext_modules=ext_modules,
+    cmdclass={'build_ext': build_ext},
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
@@ -46,7 +86,8 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[
-        "numpy>=1.20.0",
+        "numpy>=1.20.0,<2.0.0",
+        "pybind11>=2.10.0",
     ],
     extras_require={
         "sklearn": ["scikit-learn>=1.0.0", "joblib>=1.0.0"],

@@ -2,6 +2,30 @@
 
 Fast ML inference runtime with memory-mapped loading. **10-100x faster than joblib/pickle.**
 
+## ✅ Status: 100% Pass Rate on Supported Models! (v1.0.4)
+
+**8 Models - 100% Working:**
+1. LogisticRegression (multi-class)
+2. LinearRegression
+3. Ridge
+4. Lasso
+5. SGDRegressor
+6. LinearSVR
+7. MLPClassifier (multi-class)
+8. MLPRegressor
+
+**Perfect For:**
+- ✅ Multi-class classification (3+ classes)
+- ✅ Regression tasks
+- ✅ Neural networks
+- ✅ Production deployments
+
+**Not Yet Supported:**
+- Binary classification (use multi-class)
+- Tree models, SVM, KNN, clustering
+
+See [SUPPORTED_MODELS.md](SUPPORTED_MODELS.md) for details.
+
 ## Why MLE over Joblib?
 
 ```python
@@ -13,7 +37,8 @@ model = joblib.load('model.pkl')       # 100-500ms
 
 # ✅ NEW WAY (MLE) - Fast, compact, cross-platform
 import mle_runtime
-engine = mle_runtime.MLEEngine()
+from mle_runtime import Engine, Device
+engine = Engine(Device.CPU)
 engine.load_model('model.mle')         # 1-5ms (100x faster!)
 # Result: 20MB file (80% smaller), works anywhere
 ```

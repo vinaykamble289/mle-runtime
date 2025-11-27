@@ -10,6 +10,25 @@ namespace ops {
     void relu_cpu(const TensorView& input, TensorView& output);
     void gelu_cpu(const TensorView& input, TensorView& output);
     void softmax_cpu(const TensorView& input, TensorView& output);
+    void matmul_cpu(const TensorView& A, const TensorView& B, TensorView& C);
+    void decision_tree_cpu(const TensorView& input_tensor, 
+                          const TensorView& feature_tensor, const TensorView& threshold_tensor,
+                          const TensorView& value_tensor, const TensorView& children_left_tensor,
+                          const TensorView& children_right_tensor, TensorView& output_tensor);
+    void tree_ensemble_cpu(const TensorView& input_tensor, 
+                          const std::vector<TensorView>& tree_params,
+                          TensorView& output_tensor, bool is_classifier);
+    void svm_cpu(const TensorView& input_tensor, const TensorView& support_vectors,
+                const TensorView& dual_coef, const TensorView& intercept,
+                TensorView& output_tensor, float gamma);
+    void naive_bayes_cpu(const TensorView& input_tensor, const TensorView& theta,
+                        const TensorView& sigma, TensorView& output_tensor);
+    void knn_cpu(const TensorView& input_tensor, const TensorView& fit_X,
+                const TensorView& fit_y, TensorView& output_tensor, uint32_t k);
+    void clustering_cpu(const TensorView& input_tensor, const TensorView& cluster_centers,
+                       TensorView& output_tensor);
+    void decomposition_cpu(const TensorView& input_tensor, const TensorView& components,
+                          const TensorView* mean_tensor, TensorView& output_tensor);
 }
 
 Engine::Engine(Device device) : device_(device) {
@@ -130,6 +149,180 @@ void Engine::execute_node(const GraphNode& node) {
             
             if (device_ == Device::CPU) {
                 ops::softmax_cpu(*input, *output);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::MATMUL: {
+            auto A = get_or_load_tensor(node.input_ids[0]);
+            auto B = get_or_load_tensor(node.input_ids[1]);
+            
+            const auto& a_shape = A->shape();
+            const auto& b_shape = B->shape();
+            std::vector<uint32_t> out_shape = {a_shape[0], b_shape[1]};
+            auto output = TensorView::create(out_shape, DType::FP32);
+            
+            if (device_ == Device::CPU) {
+                ops::matmul_cpu(*A, *B, *output);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::DECISION_TREE: {
+            auto input = get_or_load_tensor(node.input_ids[0]);
+            auto feature = get_or_load_tensor(node.param_ids[0]);
+            auto threshold = get_or_load_tensor(node.param_ids[1]);
+            auto value = get_or_load_tensor(node.param_ids[2]);
+            auto children_left = get_or_load_tensor(node.param_ids[3]);
+            auto children_right = get_or_load_tensor(node.param_ids[4]);
+            
+            // Determine output shape from value tensor
+            // sklearn tree.value shape is [n_nodes, 1, n_classes]
+            const auto& value_shape = value->shape();
+            const auto& in_shape = input->shape();
+            uint32_t n_classes = (value_shape.size() == 3) ? value_shape[2] : 
+                                (value_shape.size() == 2) ? value_shape[1] : 1;
+            std::vector<uint32_t> out_shape = {in_shape[0], n_classes};
+            auto output = TensorView::create(out_shape, DType::FP32);
+            
+            if (device_ == Device::CPU) {
+                ops::decision_tree_cpu(*input, *feature, *threshold, *value,
+                                      *children_left, *children_right, *output);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::TREE_ENSEMBLE: {
+            auto input = get_or_load_tensor(node.input_ids[0]);
+            
+            // Load all tree parameters
+            std::vector<TensorView> tree_params;
+            for (uint16_t i = 0; i < node.num_params; ++i) {
+                tree_params.push_back(*get_or_load_tensor(node.param_ids[i]));
+            }
+            
+            // Determine output shape (assume first tree's value tensor defines it)
+            const auto& in_shape = input->shape();
+            uint32_t n_trees = node.num_params / 5;
+            const auto& first_value_shape = tree_params[2].shape();
+            uint32_t n_classes = (first_value_shape.size() > 2) ? first_value_shape[2] : 
+                                (first_value_shape.size() > 1) ? first_value_shape[1] : 1;
+            std::vector<uint32_t> out_shape = {in_shape[0], n_classes};
+            auto output = TensorView::create(out_shape, DType::FP32);
+            
+            if (device_ == Device::CPU) {
+                ops::tree_ensemble_cpu(*input, tree_params, *output, true);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::SVM: {
+            auto input = get_or_load_tensor(node.input_ids[0]);
+            auto support_vectors = get_or_load_tensor(node.param_ids[0]);
+            auto dual_coef = get_or_load_tensor(node.param_ids[1]);
+            auto intercept = get_or_load_tensor(node.param_ids[2]);
+            
+            const auto& in_shape = input->shape();
+            const auto& dual_shape = dual_coef->shape();
+            uint32_t n_classes = dual_shape[0];
+            std::vector<uint32_t> out_shape = {in_shape[0], n_classes};
+            auto output = TensorView::create(out_shape, DType::FP32);
+            
+            if (device_ == Device::CPU) {
+                ops::svm_cpu(*input, *support_vectors, *dual_coef, *intercept, *output, 0.1f);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::NAIVE_BAYES: {
+            auto input = get_or_load_tensor(node.input_ids[0]);
+            auto theta = get_or_load_tensor(node.param_ids[0]);
+            auto sigma = get_or_load_tensor(node.param_ids[1]);
+            
+            const auto& in_shape = input->shape();
+            const auto& theta_shape = theta->shape();
+            uint32_t n_classes = theta_shape[0];
+            std::vector<uint32_t> out_shape = {in_shape[0], n_classes};
+            auto output = TensorView::create(out_shape, DType::FP32);
+            
+            if (device_ == Device::CPU) {
+                ops::naive_bayes_cpu(*input, *theta, *sigma, *output);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::KNN: {
+            auto input = get_or_load_tensor(node.input_ids[0]);
+            auto fit_X = get_or_load_tensor(node.param_ids[0]);
+            auto fit_y = get_or_load_tensor(node.param_ids[1]);
+            
+            const auto& in_shape = input->shape();
+            // Determine n_classes from fit_y
+            const float* y_data = static_cast<const float*>(fit_y->data());
+            uint32_t n_samples = fit_y->numel();
+            uint32_t n_classes = 0;
+            for (uint32_t i = 0; i < n_samples; ++i) {
+                uint32_t label = static_cast<uint32_t>(y_data[i]);
+                if (label >= n_classes) n_classes = label + 1;
+            }
+            
+            std::vector<uint32_t> out_shape = {in_shape[0], n_classes};
+            auto output = TensorView::create(out_shape, DType::FP32);
+            
+            if (device_ == Device::CPU) {
+                ops::knn_cpu(*input, *fit_X, *fit_y, *output, 5);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::CLUSTERING: {
+            auto input = get_or_load_tensor(node.input_ids[0]);
+            auto cluster_centers = get_or_load_tensor(node.param_ids[0]);
+            
+            const auto& in_shape = input->shape();
+            std::vector<uint32_t> out_shape = {in_shape[0], 1};
+            auto output = TensorView::create(out_shape, DType::FP32);
+            
+            if (device_ == Device::CPU) {
+                ops::clustering_cpu(*input, *cluster_centers, *output);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::DECOMPOSITION: {
+            auto input = get_or_load_tensor(node.input_ids[0]);
+            auto components = get_or_load_tensor(node.param_ids[0]);
+            TensorView* mean_ptr = nullptr;
+            TensorView mean_view;
+            if (node.num_params > 1) {
+                mean_view = *get_or_load_tensor(node.param_ids[1]);
+                mean_ptr = &mean_view;
+            }
+            
+            const auto& in_shape = input->shape();
+            const auto& comp_shape = components->shape();
+            uint32_t n_components = comp_shape[0];
+            std::vector<uint32_t> out_shape = {in_shape[0], n_components};
+            auto output = TensorView::create(out_shape, DType::FP32);
+            
+            if (device_ == Device::CPU) {
+                ops::decomposition_cpu(*input, *components, mean_ptr, *output);
             }
             
             tensor_cache_[node.output_ids[0]] = output;

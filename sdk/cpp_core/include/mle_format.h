@@ -36,7 +36,14 @@ enum class OpType : uint16_t {
     DROPOUT = 12,
     EMBEDDING = 13,
     ATTENTION = 14,
-    // Add more as needed
+    // Sklearn-specific operations
+    DECISION_TREE = 26,
+    TREE_ENSEMBLE = 27,
+    SVM = 28,
+    NAIVE_BAYES = 29,
+    KNN = 30,
+    CLUSTERING = 31,
+    DECOMPOSITION = 32,
 };
 
 // Data types

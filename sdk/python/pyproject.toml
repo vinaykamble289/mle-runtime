@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2", "pybind11>=2.10.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "mle-runtime"
-version = "1.0.2"
+version = "1.0.4"
 description = "Fast ML inference runtime - 10-100x faster than joblib"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -27,7 +27,8 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "numpy>=1.20.0",
+    "numpy>=1.20.0,<2.0.0",
+    "pybind11>=2.10.0",
 ]
 
 [project.optional-dependencies]

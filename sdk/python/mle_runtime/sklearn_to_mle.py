@@ -154,26 +154,62 @@ class SklearnMLEExporter(MLEExporter):
             input_shape = (1, model.coef_.shape[1])
         
         dummy_input = np.zeros(input_shape, dtype=np.float32)
-        input_id = self.add_tensor(self._to_tensor(dummy_input), "input")
+        input_id = self.add_tensor(self._to_tensor(dummy_input), "input", is_placeholder=True)
         
         # Weights and bias
+        # sklearn coef_ shape: [n_classes, n_features] or [n_features] for binary
         coef = model.coef_.astype(np.float32)
         if len(coef.shape) == 1:
-            coef = coef.reshape(1, -1)
+            coef = coef.reshape(1, -1)  # [1, n_features]
         
-        weight_id = self.add_tensor(self._to_tensor(coef.T), "weight")
+        # Check if binary classification (2 classes but only 1 output)
+        is_binary = (isinstance(model, (LogisticRegression, SGDClassifier, PassiveAggressiveClassifier, RidgeClassifier)) 
+                     and hasattr(model, 'classes_') and len(model.classes_) == 2 and coef.shape[0] == 1)
         
-        if hasattr(model, 'intercept_'):
-            bias = model.intercept_.astype(np.float32)
-            if len(bias.shape) == 0:
-                bias = np.array([bias])
-            bias_id = self.add_tensor(self._to_tensor(bias), "bias")
+        # Check if classifier (needs softmax)
+        is_classifier = isinstance(model, (LogisticRegression, SGDClassifier, PassiveAggressiveClassifier, 
+                                          RidgeClassifier, LinearSVC))
+        
+        if is_binary:
+            # For binary classification, sklearn uses sigmoid: p = 1/(1 + exp(-logit))
+            # We can convert to softmax: softmax([0, logit]) = [1/(1+exp(logit)), exp(logit)/(1+exp(logit))]
+            #                                                  = [1-sigmoid(logit), sigmoid(logit)]
+            # But sklearn returns [P(class=0), P(class=1)] = [1-sigmoid, sigmoid]
+            # So we use: softmax([0, logit]) which gives exactly this!
+            
+            # Create expanded weight: [0, coef]
+            coef_expanded = np.vstack([np.zeros_like(coef[0]), coef[0]])  # [2, n_features]
+            weight_id = self.add_tensor(self._to_tensor(coef_expanded), "weight")
+            
+            # Expand bias: [0, b]
+            if hasattr(model, 'intercept_'):
+                bias = model.intercept_.astype(np.float32)
+                if len(bias.shape) == 0:
+                    bias = np.array([bias])
+                bias_expanded = np.array([0.0, bias[0]], dtype=np.float32)
+                bias_id = self.add_tensor(self._to_tensor(bias_expanded), "bias")
+            else:
+                bias_id = self.add_tensor(self._to_tensor(np.zeros(2, dtype=np.float32)), "bias")
+            
+            n_classes = 2
         else:
-            bias_id = self.add_tensor(self._to_tensor(np.zeros(coef.shape[0], dtype=np.float32)), "bias")
+            # Multi-class or regression
+            weight_id = self.add_tensor(self._to_tensor(coef), "weight")
+            
+            if hasattr(model, 'intercept_'):
+                bias = model.intercept_.astype(np.float32)
+                if len(bias.shape) == 0:
+                    bias = np.array([bias])
+                bias_id = self.add_tensor(self._to_tensor(bias), "bias")
+            else:
+                bias_id = self.add_tensor(self._to_tensor(np.zeros(coef.shape[0], dtype=np.float32)), "bias")
+            
+            n_classes = coef.shape[0]
         
-        # Output tensor
-        output_id = self.tensor_id_counter
-        self.tensor_id_counter += 1
+        # Output tensor placeholder
+        output_shape = (input_shape[0], n_classes)
+        output_tensor = self._to_tensor(np.zeros(output_shape, dtype=np.float32))
+        output_id = self.add_tensor(output_tensor, "linear_out", is_placeholder=True)
         
         # Add LINEAR node
         self.add_node('Linear',
@@ -181,43 +217,67 @@ class SklearnMLEExporter(MLEExporter):
                      outputs=[output_id],
                      params=[weight_id, bias_id])
         
-        # Add activation if logistic regression
-        if isinstance(model, LogisticRegression):
-            final_output_id = self.tensor_id_counter
-            self.tensor_id_counter += 1
+        # Add softmax for all classifiers
+        if is_classifier:
+            final_shape = (input_shape[0], n_classes)
+            final_tensor = self._to_tensor(np.zeros(final_shape, dtype=np.float32))
+            final_output_id = self.add_tensor(final_tensor, "softmax_out", is_placeholder=True)
             self.add_node('Softmax',
                          inputs=[output_id],
                          outputs=[final_output_id],
                          params=[])
     
     def _export_mlp(self, model, input_shape):
-        """Export MLPClassifier"""
+        """Export MLPClassifier/MLPRegressor"""
         if input_shape is None:
             input_shape = (1, model.coefs_[0].shape[0])
         
         dummy_input = np.zeros(input_shape, dtype=np.float32)
         current_id = self.add_tensor(self._to_tensor(dummy_input), "input", is_placeholder=True)
         
+        # Check if binary classification
+        # Binary uses 'logistic' activation (sigmoid), multi-class uses 'softmax'
+        is_binary = (hasattr(model, 'out_activation_') and 
+                     (model.out_activation_ == 'logistic' or 
+                      (model.out_activation_ == 'softmax' and len(model.classes_) == 2)) and
+                     hasattr(model, 'classes_') and len(model.classes_) == 2 and
+                     model.coefs_[-1].shape[1] == 1)
+        
         # Export each layer
         for i, (coef, intercept) in enumerate(zip(model.coefs_, model.intercepts_)):
-            # sklearn coef shape: [in_features, out_features]
-            # We need: [out_features, in_features] for our linear_cpu
-            # So transpose: coef.T gives us [out_features, in_features]
+            is_last_layer = (i == len(model.coefs_) - 1)
             
-            # Add weights
-            weight_id = self.add_tensor(
-                self._to_tensor(coef.T.astype(np.float32)), 
-                f"layer{i}.weight"
-            )
-            bias_id = self.add_tensor(
-                self._to_tensor(intercept.astype(np.float32)), 
-                f"layer{i}.bias"
-            )
+            # For binary classification on last layer, expand outputs
+            if is_last_layer and is_binary:
+                # Expand from 1 to 2 outputs: [0, w] and [0, b]
+                # This gives softmax([0, logit]) = [1-sigmoid, sigmoid]
+                expanded_coef = np.hstack([np.zeros_like(coef), coef])  # [in_features, 2]
+                expanded_intercept = np.array([0.0, intercept[0]], dtype=np.float32)
+                
+                weight_id = self.add_tensor(
+                    self._to_tensor(expanded_coef.T.astype(np.float32)),  # [2, in_features]
+                    f"layer{i}.weight_expanded"
+                )
+                bias_id = self.add_tensor(
+                    self._to_tensor(expanded_intercept),
+                    f"layer{i}.bias_expanded"
+                )
+                out_features = 2
+            else:
+                # Normal layer
+                weight_id = self.add_tensor(
+                    self._to_tensor(coef.T.astype(np.float32)),  # [out_features, in_features]
+                    f"layer{i}.weight"
+                )
+                bias_id = self.add_tensor(
+                    self._to_tensor(intercept.astype(np.float32)),
+                    f"layer{i}.bias"
+                )
+                out_features = coef.shape[1]
             
-            # Create output placeholder with correct shape
-            out_features = coef.shape[1]  # sklearn coef is [in, out]
+            # Create output placeholder
             output_shape = (input_shape[0], out_features)
-            output_tensor = torch.zeros(output_shape)
+            output_tensor = self._to_tensor(np.zeros(output_shape, dtype=np.float32))
             linear_output_id = self.add_tensor(output_tensor, f"layer{i}.linear_out", is_placeholder=True)
             
             self.add_node('Linear',
@@ -225,9 +285,10 @@ class SklearnMLEExporter(MLEExporter):
                          outputs=[linear_output_id],
                          params=[weight_id, bias_id])
             
-            # Activation (except last layer)
-            if i < len(model.coefs_) - 1:
-                act_output_tensor = torch.zeros(output_shape)
+            # Activation
+            if not is_last_layer:
+                # Hidden layer activation
+                act_output_tensor = self._to_tensor(np.zeros(output_shape, dtype=np.float32))
                 act_output_id = self.add_tensor(act_output_tensor, f"layer{i}.act_out", is_placeholder=True)
                 
                 activation = model.activation
@@ -236,26 +297,32 @@ class SklearnMLEExporter(MLEExporter):
                                  inputs=[linear_output_id],
                                  outputs=[act_output_id],
                                  params=[])
-                else:  # tanh, logistic, etc.
-                    # Use GELU as approximation
+                elif activation == 'tanh':
                     self.add_node('GELU',
+                                 inputs=[linear_output_id],
+                                 outputs=[act_output_id],
+                                 params=[])
+                else:
+                    self.add_node('ReLU',
                                  inputs=[linear_output_id],
                                  outputs=[act_output_id],
                                  params=[])
                 
                 current_id = act_output_id
+            elif hasattr(model, 'out_activation_') and model.out_activation_ in ['softmax', 'logistic']:
+                # Last layer with softmax for classification (both multi-class and binary)
+                # Binary uses 'logistic' but we convert to softmax format
+                final_shape = (input_shape[0], out_features)
+                final_tensor = self._to_tensor(np.zeros(final_shape, dtype=np.float32))
+                final_id = self.add_tensor(final_tensor, "softmax_out", is_placeholder=True)
+                self.add_node('Softmax',
+                             inputs=[linear_output_id],
+                             outputs=[final_id],
+                             params=[])
+                current_id = final_id
             else:
+                # Regression - no activation on last layer
                 current_id = linear_output_id
-        
-        # Final softmax for classification
-        if model.out_activation_ == 'softmax':
-            final_shape = (input_shape[0], model.coefs_[-1].shape[1])
-            final_tensor = torch.zeros(final_shape)
-            final_id = self.add_tensor(final_tensor, "softmax_out", is_placeholder=True)
-            self.add_node('Softmax',
-                         inputs=[current_id],
-                         outputs=[final_id],
-                         params=[])
     
     def _export_tree_ensemble(self, model, input_shape):
         """Export tree ensemble models (RandomForest, GradientBoosting)"""
@@ -271,18 +338,34 @@ class SklearnMLEExporter(MLEExporter):
         
         # Flatten all tree parameters into tensors
         tree_params = []
-        for i, estimator in enumerate(model.estimators_):
-            if hasattr(estimator, 'tree_'):
-                tree = estimator.tree_ if not isinstance(estimator, np.ndarray) else estimator[0].tree_
+        estimators = model.estimators_
+        
+        # Handle different ensemble structures
+        if isinstance(estimators, np.ndarray):
+            # GradientBoosting: estimators is ndarray of shape (n_estimators, n_classes) or (n_estimators,)
+            if estimators.ndim == 2:
+                # Multi-class: flatten the 2D array
+                estimators = estimators.flatten()
+            # else: binary/regression, already 1D
+        
+        for i, estimator in enumerate(estimators):
+            # Get the tree from the estimator
+            if isinstance(estimator, np.ndarray):
+                # GradientBoosting stores trees in arrays
+                tree = estimator[0].tree_ if len(estimator) > 0 else estimator.tree_
+            elif hasattr(estimator, 'tree_'):
+                tree = estimator.tree_
+            else:
+                continue
                 
-                # Store tree structure
-                tree_params.append({
-                    'feature': tree.feature.astype(np.int32),
-                    'threshold': tree.threshold.astype(np.float32),
-                    'value': tree.value.astype(np.float32),
-                    'children_left': tree.children_left.astype(np.int32),
-                    'children_right': tree.children_right.astype(np.int32),
-                })
+            # Store tree structure
+            tree_params.append({
+                'feature': tree.feature.astype(np.int32),
+                'threshold': tree.threshold.astype(np.float32),
+                'value': tree.value.astype(np.float32),
+                'children_left': tree.children_left.astype(np.int32),
+                'children_right': tree.children_right.astype(np.int32),
+            })
         
         # Add tree parameters as tensors
         param_ids = []
