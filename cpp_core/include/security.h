@@ -32,6 +32,12 @@ public:
     
     // Verify integrity (checksum)
     static bool verify_integrity(const std::string& model_path);
+    
+    // Helper methods (made public for implementation)
+    static std::string compute_hash_excluding_signature(const std::string& model_path);
+    static bool verify_section_checksum(std::ifstream& file, uint64_t offset, uint64_t size, uint32_t expected_checksum);
+    static std::string bytes_to_hex(const uint8_t* bytes, size_t length);
+    static void hex_to_bytes(const std::string& hex, uint8_t* bytes, size_t length);
 };
 
 // Model encryption (AES-256-GCM)
@@ -83,6 +89,7 @@ public:
     
     // Get access policy
     static AccessPolicy get_policy(const std::string& model_path);
+
 };
 
 } // namespace mle

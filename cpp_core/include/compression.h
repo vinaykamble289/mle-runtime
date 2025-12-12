@@ -1,19 +1,13 @@
 #pragma once
 
+#include "mle_format.h"
 #include <cstdint>
 #include <vector>
 #include <memory>
 
 namespace mle {
 
-// Compression algorithms
-enum class CompressionType : uint8_t {
-    NONE = 0,
-    LZ4 = 1,        // Fast compression
-    ZSTD = 2,       // Balanced
-    BROTLI = 3,     // Maximum compression
-    QUANTIZE = 4,   // Weight quantization (lossy)
-};
+// Use CompressionType from mle_format.h
 
 // Compression metadata
 struct CompressionInfo {
@@ -58,6 +52,20 @@ public:
         size_t count,
         bool is_fp16
     );
+
+private:
+    // Internal compression methods
+    static std::vector<uint8_t> compress_lz4(const void* data, size_t size, int level);
+    static std::vector<uint8_t> decompress_lz4(const void* data, size_t compressed_size, size_t uncompressed_size);
+    static std::vector<uint8_t> compress_zstd(const void* data, size_t size, int level);
+    static std::vector<uint8_t> decompress_zstd(const void* data, size_t compressed_size, size_t uncompressed_size);
+    static std::vector<uint8_t> compress_brotli(const void* data, size_t size, int level);
+    static std::vector<uint8_t> decompress_brotli(const void* data, size_t compressed_size, size_t uncompressed_size);
+    
+    // Quantization helpers
+    static std::vector<uint8_t> dequantize_weights_to_bytes(const void* data, size_t count, bool is_fp16);
+    static uint16_t float_to_fp16(float value);
+    static float fp16_to_float(uint16_t value);
 };
 
 // Streaming decompressor for large models

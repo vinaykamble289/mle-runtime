@@ -31,13 +31,30 @@ public:
     // Metadata
     std::string get_metadata() const;
     
-    // Verify signature
+    // Security and integrity
     bool verify_signature(const uint8_t* public_key) const;
+    bool verify_integrity() const;
+    
+    // Compression info
+    std::string get_compression_info() const;
+    
+    // Feature detection
+    uint32_t get_feature_flags() const;
+    bool has_feature(FeatureFlags feature) const;
 
 private:
     void load_file(const std::string& path);
     void parse_header();
     void parse_graph();
+    
+    // Backward compatibility
+    void parse_legacy_header_v1();
+    
+    // Compression support
+    void decompress_sections();
+    
+    // Integrity verification
+    bool verify_header_integrity() const;
     
     std::string path_;
     void* mapped_data_ = nullptr;
@@ -47,6 +64,9 @@ private:
     const GraphIR* graph_ = nullptr;
     const TensorDesc* tensors_ = nullptr;
     const void* weights_ptr_ = nullptr;
+    
+    // Decompressed data storage
+    std::vector<uint8_t> decompressed_weights_;
     
 #ifdef _WIN32
     void* file_handle_ = nullptr;

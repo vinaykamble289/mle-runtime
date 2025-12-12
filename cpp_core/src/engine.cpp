@@ -29,6 +29,37 @@ namespace ops {
                        TensorView& output_tensor);
     void decomposition_cpu(const TensorView& input_tensor, const TensorView& components,
                           const TensorView* mean_tensor, TensorView& output_tensor);
+    
+    // New operators
+    void conv2d_cpu(const TensorView& input, const TensorView& weight, 
+                    const TensorView& bias, TensorView& output,
+                    uint32_t stride_h, uint32_t stride_w,
+                    uint32_t pad_h, uint32_t pad_w);
+    void maxpool2d_cpu(const TensorView& input, TensorView& output,
+                       uint32_t kernel_h, uint32_t kernel_w,
+                       uint32_t stride_h, uint32_t stride_w,
+                       uint32_t pad_h, uint32_t pad_w);
+    void batchnorm_cpu(const TensorView& input, const TensorView& weight,
+                       const TensorView& bias, const TensorView& running_mean,
+                       const TensorView& running_var, TensorView& output,
+                       float eps);
+    void attention_cpu(const TensorView& query, const TensorView& key, 
+                       const TensorView& value, TensorView& output,
+                       uint32_t num_heads, float scale);
+    
+    // Additional algorithms
+    void gradient_boosting_cpu(const TensorView& input_tensor,
+                              const std::vector<TensorView>& tree_params,
+                              const TensorView& learning_rates,
+                              TensorView& output_tensor, bool is_classifier);
+    void dbscan_cpu(const TensorView& input_tensor, TensorView& output_tensor,
+                    float eps, uint32_t min_samples);
+    void layernorm_cpu(const TensorView& input, const TensorView& weight,
+                       const TensorView& bias, TensorView& output, float eps);
+    void dropout_cpu(const TensorView& input, TensorView& output, float dropout_rate);
+    void embedding_cpu(const TensorView& input, const TensorView& weight, TensorView& output);
+    void add_cpu(const TensorView& input1, const TensorView& input2, TensorView& output);
+    void mul_cpu(const TensorView& input1, const TensorView& input2, TensorView& output);
 }
 
 Engine::Engine(Device device) : device_(device) {
@@ -323,6 +354,209 @@ void Engine::execute_node(const GraphNode& node) {
             
             if (device_ == Device::CPU) {
                 ops::decomposition_cpu(*input, *components, mean_ptr, *output);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::CONV2D: {
+            auto input = get_or_load_tensor(node.input_ids[0]);
+            auto weight = get_or_load_tensor(node.param_ids[0]);
+            auto bias = get_or_load_tensor(node.param_ids[1]);
+            
+            // Calculate output shape
+            const auto& in_shape = input->shape();   // [N, C_in, H_in, W_in]
+            const auto& w_shape = weight->shape();   // [C_out, C_in, K_h, K_w]
+            
+            // Default parameters (can be read from attributes in real implementation)
+            uint32_t stride_h = 1, stride_w = 1, pad_h = 0, pad_w = 0;
+            
+            uint32_t H_out = (in_shape[2] + 2 * pad_h - w_shape[2]) / stride_h + 1;
+            uint32_t W_out = (in_shape[3] + 2 * pad_w - w_shape[3]) / stride_w + 1;
+            
+            std::vector<uint32_t> out_shape = {in_shape[0], w_shape[0], H_out, W_out};
+            auto output = TensorView::create(out_shape, DType::FP32);
+            
+            if (device_ == Device::CPU) {
+                ops::conv2d_cpu(*input, *weight, *bias, *output, stride_h, stride_w, pad_h, pad_w);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::MAXPOOL2D: {
+            auto input = get_or_load_tensor(node.input_ids[0]);
+            
+            // Default parameters
+            uint32_t kernel_h = 2, kernel_w = 2, stride_h = 2, stride_w = 2, pad_h = 0, pad_w = 0;
+            
+            const auto& in_shape = input->shape();
+            uint32_t H_out = (in_shape[2] + 2 * pad_h - kernel_h) / stride_h + 1;
+            uint32_t W_out = (in_shape[3] + 2 * pad_w - kernel_w) / stride_w + 1;
+            
+            std::vector<uint32_t> out_shape = {in_shape[0], in_shape[1], H_out, W_out};
+            auto output = TensorView::create(out_shape, DType::FP32);
+            
+            if (device_ == Device::CPU) {
+                ops::maxpool2d_cpu(*input, *output, kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::BATCHNORM: {
+            auto input = get_or_load_tensor(node.input_ids[0]);
+            auto weight = get_or_load_tensor(node.param_ids[0]);
+            auto bias = get_or_load_tensor(node.param_ids[1]);
+            auto running_mean = get_or_load_tensor(node.param_ids[2]);
+            auto running_var = get_or_load_tensor(node.param_ids[3]);
+            
+            auto output = TensorView::create(input->shape(), input->dtype());
+            
+            if (device_ == Device::CPU) {
+                ops::batchnorm_cpu(*input, *weight, *bias, *running_mean, *running_var, *output, 1e-5f);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::ATTENTION: {
+            auto query = get_or_load_tensor(node.input_ids[0]);
+            auto key = get_or_load_tensor(node.input_ids[1]);
+            auto value = get_or_load_tensor(node.input_ids[2]);
+            
+            // Default parameters
+            uint32_t num_heads = 8;
+            float scale = 1.0f / std::sqrt(query->shape()[2] / num_heads);
+            
+            auto output = TensorView::create(query->shape(), query->dtype());
+            
+            if (device_ == Device::CPU) {
+                ops::attention_cpu(*query, *key, *value, *output, num_heads, scale);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::GRADIENT_BOOSTING: {
+            auto input = get_or_load_tensor(node.input_ids[0]);
+            auto learning_rates = get_or_load_tensor(node.param_ids[node.num_params - 1]);
+            
+            // Load all tree parameters (excluding learning rates)
+            std::vector<TensorView> tree_params;
+            for (uint16_t i = 0; i < node.num_params - 1; ++i) {
+                tree_params.push_back(*get_or_load_tensor(node.param_ids[i]));
+            }
+            
+            const auto& in_shape = input->shape();
+            uint32_t n_trees = (node.num_params - 1) / 5;
+            const auto& first_value_shape = tree_params[2].shape();
+            uint32_t n_classes = (first_value_shape.size() > 2) ? first_value_shape[2] : 
+                                (first_value_shape.size() > 1) ? first_value_shape[1] : 1;
+            std::vector<uint32_t> out_shape = {in_shape[0], n_classes};
+            auto output = TensorView::create(out_shape, DType::FP32);
+            
+            if (device_ == Device::CPU) {
+                ops::gradient_boosting_cpu(*input, tree_params, *learning_rates, *output, true);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::DBSCAN: {
+            auto input = get_or_load_tensor(node.input_ids[0]);
+            
+            const auto& in_shape = input->shape();
+            std::vector<uint32_t> out_shape = {in_shape[0], 1};
+            auto output = TensorView::create(out_shape, DType::FP32);
+            
+            // Default parameters
+            float eps = 0.5f;
+            uint32_t min_samples = 5;
+            
+            if (device_ == Device::CPU) {
+                ops::dbscan_cpu(*input, *output, eps, min_samples);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::LAYERNORM: {
+            auto input = get_or_load_tensor(node.input_ids[0]);
+            auto weight = get_or_load_tensor(node.param_ids[0]);
+            auto bias = get_or_load_tensor(node.param_ids[1]);
+            
+            auto output = TensorView::create(input->shape(), input->dtype());
+            
+            if (device_ == Device::CPU) {
+                ops::layernorm_cpu(*input, *weight, *bias, *output, 1e-5f);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::DROPOUT: {
+            auto input = get_or_load_tensor(node.input_ids[0]);
+            auto output = TensorView::create(input->shape(), input->dtype());
+            
+            // Default dropout rate (inference mode)
+            float dropout_rate = 0.0f;
+            
+            if (device_ == Device::CPU) {
+                ops::dropout_cpu(*input, *output, dropout_rate);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::EMBEDDING: {
+            auto input = get_or_load_tensor(node.input_ids[0]);
+            auto weight = get_or_load_tensor(node.param_ids[0]);
+            
+            const auto& in_shape = input->shape();
+            const auto& w_shape = weight->shape();
+            std::vector<uint32_t> out_shape = {in_shape[0], in_shape[1], w_shape[1]};
+            auto output = TensorView::create(out_shape, DType::FP32);
+            
+            if (device_ == Device::CPU) {
+                ops::embedding_cpu(*input, *weight, *output);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::ADD: {
+            auto input1 = get_or_load_tensor(node.input_ids[0]);
+            auto input2 = get_or_load_tensor(node.input_ids[1]);
+            
+            auto output = TensorView::create(input1->shape(), input1->dtype());
+            
+            if (device_ == Device::CPU) {
+                ops::add_cpu(*input1, *input2, *output);
+            }
+            
+            tensor_cache_[node.output_ids[0]] = output;
+            break;
+        }
+        
+        case OpType::MUL: {
+            auto input1 = get_or_load_tensor(node.input_ids[0]);
+            auto input2 = get_or_load_tensor(node.input_ids[1]);
+            
+            auto output = TensorView::create(input1->shape(), input1->dtype());
+            
+            if (device_ == Device::CPU) {
+                ops::mul_cpu(*input1, *input2, *output);
             }
             
             tensor_cache_[node.output_ids[0]] = output;
